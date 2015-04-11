@@ -1,7 +1,7 @@
 # sshclient
 SSH Client written in Go. It is more like wrapper of crypto/ssh package
 
-This package is inspired from easyssh from hypersleep. I modify so it could be authenticated using password and manage one persistent SSH session client
+This package is inspired from easyssh from hypersleep. I modify so it can be authenticated using password and manage one persistent SSH session client
 
 ## Load from repo
 ```
