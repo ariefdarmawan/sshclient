@@ -18,7 +18,7 @@ type SshClient struct {
 	Port     string
 	Password string
 	AuthType string
-	session  *ssh.Session
+	sclient  *ssh.Client
 }
 
 func NewSshClient(server, user string) *SshClient {
@@ -69,41 +69,47 @@ func (client *SshClient) connect() error {
 	if err != nil {
 		return err
 	}
-
-	session, err := sc.NewSession()
-	if err != nil {
-		return err
-	}
-
-	client.session = session
+	client.sclient = sc
 	return nil
 }
 
-func (client *SshClient) Run(command string) (string, error) {
-	if client.session == nil {
-		err := client.connect()
-		if err != nil {
-			return "", err
+func (client *SshClient) session() (*ssh.Session, error) {
+	if client.sclient == nil {
+		if err := client.connect(); err != nil {
+			return nil, err
 		}
 	}
 
-	var b bytes.Buffer
-	client.session.Stdout = &b
-	err := client.session.Run(command)
+	sc := client.sclient
+	session, err := sc.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func (client *SshClient) Run(command string) (string, error) {
+	session, err := client.session()
 	if err != nil {
 		return "", err
 	}
+	defer session.Close()
 
+	var b bytes.Buffer
+	session.Stdout = &b
+	err = session.Run(command)
+	if err != nil {
+		return "", err
+	}
 	return b.String(), nil
 }
 
 func (client *SshClient) Scp(sourceFile string) error {
-	if client.session == nil {
-		err := client.connect()
-		if err != nil {
-			return err
-		}
+	session, err := client.session()
+	if err != nil {
+		return err
 	}
+	defer session.Close()
 
 	targetFile := filepath.Base(sourceFile)
 	src, srcErr := os.Open(sourceFile)
@@ -118,7 +124,7 @@ func (client *SshClient) Scp(sourceFile string) error {
 	}
 
 	go func() {
-		w, _ := client.session.StdinPipe()
+		w, _ := session.StdinPipe()
 		fmt.Fprintln(w, "C0644", srcStat.Size(), targetFile)
 		if srcStat.Size() > 0 {
 			io.Copy(w, src)
@@ -130,7 +136,7 @@ func (client *SshClient) Scp(sourceFile string) error {
 		}
 	}()
 
-	if err := client.session.Run(fmt.Sprintf("scp -t %s", targetFile)); err != nil {
+	if err := session.Run(fmt.Sprintf("scp -t %s", targetFile)); err != nil {
 		return err
 	}
 
@@ -138,7 +144,7 @@ func (client *SshClient) Scp(sourceFile string) error {
 }
 
 func (client *SshClient) Close() {
-	if client.session != nil {
-		client.session.Close()
+	if client.sclient != nil {
+		client.sclient.Close()
 	}
 }
